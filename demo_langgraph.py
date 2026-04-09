@@ -9,45 +9,53 @@ from langgraph.graph import StateGraph, END
 from typing import TypedDict
 
 
-# ---- STATE ----
 class AgentState(TypedDict):
     action: str
     result: str
 
 
-# ---- GITHUB OAUTH ----
+# ---- GITHUB ENTERPRISE OAUTH ----
 @requires_access_token(
-    provider_name="github-oauth-client-ufpc7",
+    provider_name="afp-ghe-oauth",
     scopes=["read:user", "repo"],
     auth_flow="USER_FEDERATION",
     on_auth_url=lambda url: print(f"\n*** OPEN THIS URL FOR GITHUB ***\n{url}\n"),
-    force_authentication=True,
+    force_authentication=False,
     callback_url="http://localhost:9090/oauth2/callback",
 )
 async def call_github(*, access_token: str, action: str = "gh_repos"):
     headers = {
         "Authorization": f"Bearer {access_token}",
-        "Accept": "application/vnd.github.v3+json",
+        "Accept": "application/json",
     }
     async with httpx.AsyncClient() as client:
         if action == "gh_whoami":
-            r = await client.get("https://api.github.com/user", headers=headers)
+            r = await client.get("https://gitprod.statestr.com/api/v3/user", headers=headers)
             return r.json() if r.status_code == 200 else {"error": r.text}
         if action == "gh_repos":
             r = await client.get(
-                "https://api.github.com/user/repos",
+                "https://gitprod.statestr.com/api/v3/user/repos",
                 params={"per_page": 10, "sort": "updated"},
                 headers=headers,
             )
             if r.status_code == 200:
-                return [{"name": repo["full_name"], "stars": repo["stargazers_count"]} for repo in r.json()]
+                return [{"name": repo["full_name"], "url": repo["html_url"], "stars": repo["stargazers_count"]} for repo in r.json()]
+            return {"error": r.text}
+        if action == "gh_issues":
+            r = await client.get(
+                "https://gitprod.statestr.com/api/v3/issues",
+                params={"per_page": 10, "state": "open"},
+                headers=headers,
+            )
+            if r.status_code == 200:
+                return [{"title": i["title"], "url": i["html_url"]} for i in r.json()]
             return {"error": r.text}
     return {"error": f"Unknown: {action}"}
 
 
 # ---- ATLASSIAN OAUTH ----
 @requires_access_token(
-    provider_name="atlassian-oauth-client-wkmst",
+    provider_name="afp-atlassian-oauth",
     scopes=[
         "read:jira-work",
         "read:confluence-content.all",
@@ -74,7 +82,14 @@ async def call_atlassian(*, access_token: str, action: str = "at_sites"):
         sites = sites_resp.json()
         if action == "at_sites":
             return [{"name": s.get("name"), "url": s.get("url")} for s in sites]
-        cloud_id = sites[0]["id"] if sites else None
+        # Find State Street site
+        cloud_id = None
+        for site in sites:
+            if "statestreet" in site.get("url", ""):
+                cloud_id = site["id"]
+                break
+        if not cloud_id:
+            cloud_id = sites[0]["id"] if sites else None
         if not cloud_id:
             return {"error": "No sites found"}
         if action == "at_projects":
@@ -93,6 +108,16 @@ async def call_atlassian(*, access_token: str, action: str = "at_sites"):
             if r.status_code == 200:
                 return [{"name": s.get("name"), "key": s.get("key")} for s in r.json().get("results", [])]
             return {"error": r.text}
+        if action == "at_search":
+            r = await client.get(
+                f"https://api.atlassian.com/ex/confluence/{cloud_id}/wiki/rest/api/content",
+                params={"limit": 10},
+                headers=headers,
+            )
+            if r.status_code == 200:
+                results = r.json().get("results", [])
+                return [{"title": p.get("title"), "type": p.get("type")} for p in results]
+            return {"error": r.text}
     return {"error": f"Unknown: {action}"}
 
 
@@ -107,7 +132,6 @@ def atlassian_node(state: AgentState) -> AgentState:
     return {"action": state["action"], "result": json.dumps(result, indent=2)}
 
 
-# ---- LANGGRAPH ROUTER ----
 def router(state: AgentState) -> str:
     if state["action"].startswith("gh_"):
         return "github"
@@ -130,7 +154,7 @@ graph = builder.compile()
 if __name__ == "__main__":
     import sys
 
-    valid = ["gh_whoami", "gh_repos", "at_sites", "at_projects", "at_spaces"]
+    valid = ["gh_whoami", "gh_repos", "gh_issues", "at_sites", "at_projects", "at_spaces", "at_search"]
 
     if len(sys.argv) < 2:
         print(f"Usage: python demo_langgraph.py <action>")
