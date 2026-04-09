@@ -16,33 +16,33 @@ class AgentState(TypedDict):
 
 
 # ---- GITHUB OAUTH ----
-#@requires_access_token(
- #   provider_name="github-oauth-client-ufpc7",
- #   scopes=["read:user", "repo"],
- #   auth_flow="USER_FEDERATION",
- #   on_auth_url=lambda url: print(f"\n*** OPEN THIS URL FOR GITHUB ***\n{url}\n"),
- #   force_authentication=True,
- #   callback_url="http://localhost:9090/oauth2/callback",
-#)
-#async def call_github(*, access_token: str, action: str = "gh_repos"):
-    #headers = {
-        #"Authorization": f"Bearer {access_token}",
-        #"Accept": "application/vnd.github.v3+json",
-    #}
-    #async with httpx.AsyncClient() as client:
-        #if action == "gh_whoami":
-            #r = await client.get("https://api.github.com/user", headers=headers)
-            #return r.json() if r.status_code == 200 else {"error": r.text}
-        #if action == "gh_repos":
-            #r = await client.get(
-                #"https://api.github.com/user/repos",
-                #params={"per_page": 10, "sort": "updated"},
-                #headers=headers,
-            #)
-            #if r.status_code == 200:
-                #return [{"name": repo["full_name"], "stars": repo["stargazers_count"]} for repo in r.json()]
-            #return {"error": r.text}
-    #return {"error": f"Unknown: {action}"}
+@requires_access_token(
+    provider_name="github-oauth-client-ufpc7",
+    scopes=["read:user", "repo"],
+    auth_flow="USER_FEDERATION",
+    on_auth_url=lambda url: print(f"\n*** OPEN THIS URL FOR GITHUB ***\n{url}\n"),
+    force_authentication=True,
+    callback_url="http://localhost:9090/oauth2/callback",
+)
+async def call_github(*, access_token: str, action: str = "gh_repos"):
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Accept": "application/vnd.github.v3+json",
+    }
+    async with httpx.AsyncClient() as client:
+        if action == "gh_whoami":
+            r = await client.get("https://api.github.com/user", headers=headers)
+            return r.json() if r.status_code == 200 else {"error": r.text}
+        if action == "gh_repos":
+            r = await client.get(
+                "https://api.github.com/user/repos",
+                params={"per_page": 10, "sort": "updated"},
+                headers=headers,
+            )
+            if r.status_code == 200:
+                return [{"name": repo["full_name"], "stars": repo["stargazers_count"]} for repo in r.json()]
+            return {"error": r.text}
+    return {"error": f"Unknown: {action}"}
 
 
 # ---- ATLASSIAN OAUTH ----
